@@ -579,7 +579,11 @@ class GeminiAnalyzer:
 
             client_kwargs = {"api_key": config.anthropic_api_key}
             if config.anthropic_base_url:
-                client_kwargs["base_url"] = config.anthropic_base_url
+                # Anthropic SDK 会自动拼接 /v1，去掉用户配置中可能带的末尾 /v1 避免重复
+                base_url = config.anthropic_base_url.rstrip("/")
+                if base_url.endswith("/v1"):
+                    base_url = base_url[:-3]
+                client_kwargs["base_url"] = base_url
             self._anthropic_client = Anthropic(**client_kwargs)
             self._current_model_name = config.anthropic_model
             self._use_anthropic = True
