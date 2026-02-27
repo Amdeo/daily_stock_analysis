@@ -2022,10 +2022,10 @@ class NotificationService:
         """
         return markdown_to_html_document(markdown_text)
     
-    def send_to_telegram(self, content: str) -> bool:
+    def send_to_telegram(self, content: str, pages_url: Optional[str] = None) -> bool:
         """
         推送消息到 Telegram 机器人
-        
+
         Telegram Bot API 格式：
         POST https://api.telegram.org/bot<token>/sendMessage
         {
@@ -2033,13 +2033,16 @@ class NotificationService:
             "text": "消息内容",
             "parse_mode": "Markdown"
         }
-        
+
         Args:
             content: 消息内容（Markdown 格式）
-            
+            pages_url: GitHub Pages 报告链接（可选）
+
         Returns:
             是否发送成功
         """
+        if pages_url:
+            content = content + f"\n\n[📊 查看完整 HTML 报告]({pages_url})"
         if not self._is_telegram_configured():
             logger.warning("Telegram 配置不完整，跳过推送")
             return False
@@ -3367,9 +3370,10 @@ class NotificationService:
         return all_success
     
     def save_report_to_file(
-        self, 
-        content: str, 
-        filename: Optional[str] = None
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        analyzer=None,
     ) -> str:
         """
         保存日报到本地文件
@@ -3397,6 +3401,24 @@ class NotificationService:
             f.write(content)
         
         logger.info(f"日报已保存到: {filepath}")
+
+        # 同步生成 HTML 到 docs/
+        try:
+            from src.formatters import markdown_to_html_document, generate_html_with_ai
+            html_content = None
+            if analyzer is not None:
+                html_content = generate_html_with_ai(content, analyzer)
+            if html_content is None:
+                html_content = markdown_to_html_document(content)
+            docs_dir = Path(__file__).parent.parent / 'docs'
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            date_str = datetime.now().strftime('%Y%m%d')
+            (docs_dir / f"report_{date_str}.html").write_text(html_content, encoding='utf-8')
+            (docs_dir / 'index.html').write_text(html_content, encoding='utf-8')
+            logger.info(f"HTML 报告已写入 docs/index.html 和 docs/report_{date_str}.html")
+        except Exception as e:
+            logger.warning(f"生成 HTML 报告失败（不影响主流程）: {e}")
+
         return str(filepath)
 
 

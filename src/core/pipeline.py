@@ -1037,7 +1037,7 @@ class StockAnalysisPipeline:
             report = self.notifier.generate_dashboard_report(results)
             
             # 保存到本地
-            filepath = self.notifier.save_report_to_file(report)
+            filepath = self.notifier.save_report_to_file(report, analyzer=self.analyzer)
             logger.info(f"决策仪表盘日报已保存: {filepath}")
             
             # 跳过推送（单股推送模式）
@@ -1066,7 +1066,7 @@ class StockAnalysisPipeline:
                     if channel == NotificationChannel.FEISHU:
                         non_wechat_success = self.notifier.send_to_feishu(report) or non_wechat_success
                     elif channel == NotificationChannel.TELEGRAM:
-                        non_wechat_success = self.notifier.send_to_telegram(report) or non_wechat_success
+                        non_wechat_success = self.notifier.send_to_telegram(report, pages_url=self._build_pages_url()) or non_wechat_success
                     elif channel == NotificationChannel.EMAIL:
                         if stock_email_groups:
                             code_to_emails: Dict[str, Optional[List[str]]] = {}
@@ -1118,3 +1118,14 @@ class StockAnalysisPipeline:
                 
         except Exception as e:
             logger.error(f"发送通知失败: {e}")
+
+    @staticmethod
+    def _build_pages_url() -> Optional[str]:
+        """从 GitHub Actions 内置环境变量构造 Pages URL，本地运行返回 None。"""
+        import os
+        repo = os.getenv('GITHUB_REPOSITORY')  # e.g. "alice/daily_stock_analysis"
+        if not repo:
+            return None
+        owner, repo_name = repo.split('/', 1)
+        date_str = __import__('datetime').date.today().strftime('%Y%m%d')
+        return f"https://{owner}.github.io/{repo_name}/report_{date_str}.html"

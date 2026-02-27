@@ -7,9 +7,15 @@
 提供各种内容格式化工具函数，用于将通用格式转换为平台特定格式。
 """
 
+import logging
 import re
 import time
-from typing import List, Callable
+from typing import TYPE_CHECKING, List, Callable, Optional
+
+if TYPE_CHECKING:
+    from src.analyzer import GeminiAnalyzer
+
+logger = logging.getLogger(__name__)
 
 import markdown2
 
@@ -210,6 +216,75 @@ def markdown_to_html_document(markdown_text: str) -> str:
         </body>
         </html>
         """
+
+
+_HTML_GENERATION_PROMPT = """你是一位专业的金融数据可视化工程师。请将以下股票分析报告（Markdown 格式）转换为一个完整、美观的 HTML 页面。
+
+【输出要求】
+- 输出完整 HTML 文档（DOCTYPE + head + body），所有 CSS 写在 <style> 标签内，零外部依赖
+- 只输出 HTML 代码，不要任何解释、代码块标记（```）或多余文字
+
+【视觉风格】
+- 深色金融仪表盘风格，背景 #0d1117，卡片背景 #161b22，边框 #30363d
+- 字体：-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif
+- 响应式布局，适配手机（max-width: 768px 时单列）
+
+【颜色规范】
+- 🟢 买入 / 利好 / ✅ → #2ea043（绿）
+- 🔴 卖出 / 风险 / ❌ → #f85149（红）
+- ⚪️ 观望 / ⚠️ → #d29922（黄）
+- 数据标签、链接 → #58a6ff（蓝）
+- 正文文字 → #c9d1d9，次要文字 → #8b949e
+
+【布局规则】
+1. 顶部英雄区：股票名称（大字）+ 核心结论徽章（买入/卖出/观望，对应颜色背景，圆角，白字）+ 一句话决策（引用块样式）
+2. 各板块用卡片包裹（圆角 8px，内边距 16px，底部间距 16px）
+3. 卡片标题带左侧彩色竖条（accent bar）
+4. 表格：表头深色背景 #21262d，斑马纹 #0d1117/#161b22，悬停高亮 #1f2937，overflow-x: auto
+5. 检查清单：✅ 绿色，❌ 红色，⚠️ 黄色，每项独立行，左侧图标对齐
+6. 风险警报列表：每项前加红色圆点，背景微红 rgba(248,81,73,0.08)
+7. 利好催化列表：每项前加绿色圆点，背景微绿 rgba(46,160,67,0.08)
+8. 狙击点位表格：理想买入点绿色高亮，止损位红色高亮
+9. 页脚显示生成时间（灰色小字）
+
+【Markdown 内容】
+{content}"""
+
+
+def generate_html_with_ai(markdown_text: str, analyzer: "GeminiAnalyzer") -> Optional[str]:
+    """
+    使用 AI 将 Markdown 报告转换为美观的 HTML 页面。
+
+    Args:
+        markdown_text: Markdown 格式的报告内容
+        analyzer: GeminiAnalyzer 实例
+
+    Returns:
+        HTML 字符串，失败时返回 None
+    """
+    try:
+        prompt = _HTML_GENERATION_PROMPT.format(content=markdown_text)
+        generation_config = {
+            "temperature": 0.3,
+            "max_output_tokens": 8192,
+        }
+        html = analyzer._call_api_with_retry(prompt, generation_config)
+
+        # 去除 AI 可能输出的代码块标记
+        html = html.strip()
+        if html.startswith("```"):
+            html = re.sub(r"^```[a-z]*\n?", "", html)
+            html = re.sub(r"\n?```$", "", html.rstrip())
+
+        if "<!DOCTYPE" not in html and "<html" not in html:
+            logger.warning("AI 返回内容不像完整 HTML，跳过")
+            return None
+
+        logger.info("AI 生成 HTML 报告成功")
+        return html
+    except Exception as e:
+        logger.warning(f"AI 生成 HTML 失败: {e}")
+        return None
 
 
 def format_feishu_markdown(content: str) -> str:
